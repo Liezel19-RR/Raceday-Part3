@@ -1,0 +1,41 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${SA_PASSWORD:?Set SA_PASSWORD in .env}
+    ports:
+      - "${SQL_PORT:-14330}:1433"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+  api:
+    build:
+      context: .
+      dockerfile: RaceDay.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__RaceDay: "Server=sqlserver,1433;Database=RaceDayDb;User Id=sa;Password=${SA_PASSWORD:?Set SA_PASSWORD in .env};TrustServerCertificate=True"
+      Database__InitializeOnStartup: "true"
+      Database__StartupRetries: "15"
+      Azure__ConnectionString: ${AZURE_STORAGE_CONNECTION_STRING:-}
+      Azure__ContainerName: ${AZURE_STORAGE_CONTAINER:-raceday-images}
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-5184}:8080"
+  web:
+    build:
+      context: .
+      dockerfile: RaceDay.Mvc/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ApiBaseUrl: http://api:8080/
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-5284}:8080"
